@@ -11,8 +11,8 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % @Brief Split the string and analyse each part of the elements
-% @Param query string
-% @Return a tuple {X1, Y1, X2, Y2}
+% @Param query string and a list if exist
+% @Return a list of tuples [List, {lieu, {X1, Y1, X2, Y2}}]
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                           FONCTION PRINCIPALE
@@ -38,35 +38,7 @@ analyser(QueryString, Analyzed) when is_list(QueryString) ->
 			end,
 
 		if(Preposition =:= false) -> {error, not_matching};
-			true -> 
-				case Preposition of
-					"a"               -> parse({"a", Zone, Analyzed}); % a VILLE
-					"en"              -> parse({"en", Zone, Analyzed}); % en REGION
-					"a la"            -> parse({"a la", Zone, Analyzed}); % mer ou montagne
-					"dans"            -> parse({"dans", Zone, Analyzed}); % l'est ou l'ouest
-					"pres de"         -> parse({"pres de", Zone, Analyzed}); % pres de VILLE
-					"dans le"         -> parse({"dans le", Zone, Analyzed}); % nord ou sud
-					"a cote de"       -> parse({"a cote de", Zone, Analyzed}); % a cote de VILLE
-					"autour de"       -> parse({"autour de", Zone, Analyzed}); % autour de VILLE
-					"au bord de la"   -> parse({"au bord de la", Zone, Analyzed}); % mer
-					"au nord de"      -> parse({"au nord de", Zone, Analyzed});
-					"au sud de"       -> parse({"au sud de", Zone, Analyzed});
-					"a l'est de"      -> parse({"a l'est de", Zone, Analyzed});
-					"a l'ouest de"    -> parse({"a l'ouest de", Zone, Analyzed});
-					"au sud de la"    -> parse({"au sud de la", Zone, Analyzed}); 
-					"au nord de la"   -> parse({"au nord de la", Zone, Analyzed});
-					"a l'est de la"   -> parse({"a l'est de la", Zone, Analyzed});
-					"a l'ouest de la" -> parse({"a l'ouest de la", Zone, Analyzed});
-					"au nord des"     -> parse({"au nord des", Zone, Analyzed});
-					"au sud du"       -> parse({"au sud du", Zone, Analyzed});
-					"au sud des"      -> parse({"au sud des", Zone, Analyzed});
-					"au nord du"      -> parse({"au nord du", Zone, Analyzed});
-					"a l'est du"      -> parse({"a l'est du", Zone, Analyzed});
-					"a l'est des"     -> parse({"a l'est des", Zone, Analyzed});
-					"a l'ouest du"    -> parse({"a l'ouest du", Zone, Analyzed});
-					"a l'ouest des"   -> parse({"a l'ouest des", Zone, Analyzed});
-					_ -> {error, not_matching}
-				end
+			true -> parse({Preposition, Zone, Analyzed})
 		end
 	end;
 
@@ -86,14 +58,29 @@ parse({"a", Zone, Analyzed}) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% EN REGION
+% EN REGION sauf le nord-pas-de-calais et le centre / EN DEPARTEMENT (certains)
 parse({"en", Zone, Analyzed}) -> 
 	Pos_region = lists:keyfind(Zone, 1, ?Regions),
-	if  Pos_region  =/= false -> lists:append(Analyzed, [{lieu, element(2, Pos_region)}]);
-		true -> {error, unknown_town}
+	if  Pos_region  =/= false andalso element(1, Pos_region) =/= "centre" 
+		andalso element(1, Pos_region) =/= "nord-pas-de-calais"
+				-> lists:append(Analyzed, [{lieu, element(2, Pos_region)}]);
+		true -> 
+			Special_Departements = {"dordogne", "gironde", "loire-atlantique", "lozere", "vendee", 
+							"meurthe-et-moselle", "moselle", "seine-saint-denis", "saone-et-loire", 
+							"seine-et-marne", "savoie", "haute-garonne", "haute-saone", "haute-savoie"},
+			Exist = is_in_Tuple(Special_Departements, Zone),
+			if (Exist =/= 0) -> 
+				lists:append(Analyzed, [{lieu, element(2, lists:keyfind(Zone, 1, ?Departements))}]);
+				true -> {error, unknown_area}
+			end
 	end;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% DANS LE NORD-PAS-DE-CALAIS ou DANS LE CENTRE
+parse({"dans le", Region, Analyzed}) when Region =:= "nord-pas-de-calais" orelse Region =:= "centre" -> 
+	Pos_region = lists:keyfind(Region, 1, ?Regions),
+	lists:append(Analyzed, [{lieu, element(2, Pos_region)}]);
 
 % DANS L'OUEST 
 parse({"dans", Point_Cardinal, Analyzed}) when Point_Cardinal =:= "l'ouest" -> 
@@ -114,6 +101,65 @@ parse({"dans le", Point_Cardinal, Analyzed}) when Point_Cardinal =:= "nord" ->
 parse({"dans le", Point_Cardinal, Analyzed}) when Point_Cardinal =:= "sud" -> 
 	lists:append(Analyzed, [{lieu, region_ToBoundingBox(?Sud)}]);
 	% Sud : {"aquitaine","languedoc-roussillon", "midi-pyrenees", "provence-alpes-cotes-d'azur"}
+
+% DANS LE DEPARTEMENT 
+parse({"dans le", Departement, Analyzed}) -> 
+	Exist_G = string:str(Departement, "g"),
+	Exist_TA = string:str(Departement, "ta"),
+	Exist_VA = string:str(Departement, "va"),
+	if (Exist_G =:= 1 orelse Exist_TA =:= 1 orelse Exist_VA =:= 1) -> 
+		Tuple = lists:keyfind(Departement, 1, ?Departements),
+		if (Tuple =/= false) ->  lists:append(Analyzed, [{lieu, element(2, Tuple)}]);
+			true -> {error, unknown_departement}
+		end;
+		true -> 
+			Departement_le  = {"bas-rhin", "cher",	"doubs", "finistere", "haut-rhin", "jura", "loiret",
+							   "loir-et-cher", "lot", "lot-et-garonne", "maine-et-loire", "morbihan", 
+							   "nord", "pas-de-calais", "rhone"},
+			Exist = is_in_Tuple(Departement_le, Departement),
+			if (Exist =/= 0) -> 
+				lists:append(Analyzed, [{lieu, element(2, lists:keyfind(Departement, 1, ?Departements))}]);
+				true -> {error, unknown_departement}
+			end
+	end;
+
+% DANS LA DEPARTEMENT
+parse({"dans la", Departement, Analyzed}) -> 
+	Departement_la = {"cote-d'or", "drome", "loire", "mayenne", "meuse", "nievre", "sarthe"},
+	Exist = is_in_Tuple(Departement_la, Departement),
+	if (Exist =/= 0) -> lists:append(Analyzed, [{lieu, element(2, lists:keyfind(Departement, 1, ?Departements))}]);
+		true -> {error, not_french}
+	end;
+
+% DANS LES DEPARTEMENT
+parse({"dans les", Departement, Analyzed}) -> 
+	Departement_les = {"bouches-du-rhone", "cotes-d'armor", "hautes-alpes", "hautes-pyrenees", 
+					   "hauts-de-seine", "landes", "pyrenees-atlantiques", "pyrenees-orientales",
+					   "vosges", "yvelines"},
+	Exist = is_in_Tuple(Departement_les, Departement),
+	if (Exist =/= 0) -> lists:append(Analyzed, [{lieu, element(2, lists:keyfind(Departement, 1, ?Departements))}]);
+		true -> {error, not_french}
+	end;
+
+% DANS L' DEPARTEMENT
+parse({"dans", Departement, Analyzed}) -> 
+	New_Departement = list_to_tuple(string:tokens(Departement, "\'")),
+	if (element(1, New_Departement) =:= "l" andalso tuple_size(New_Departement) =:= 2) ->
+		Tuple = lists:keyfind(element(2, New_Departement), 1, ?Departements),
+		if (Tuple =/= false) -> 
+			Exist_A = string:str(element(2, New_Departement), "a"),
+			Exist_E = string:str(element(2, New_Departement), "e"),
+			Exist_I = string:str(element(2, New_Departement), "i"),
+				if  Exist_A =:= 1 orelse Exist_E =:= 1 orelse Exist_I =:= 1 orelse
+				   	element(2,New_Departement) =:= "herault" orelse 
+				   	element(2,New_Departement) =:= "yonne" -> 
+				   		lists:append(Analyzed, [{lieu, element(2, Tuple)}]);
+				true -> {error, unknown_departement}
+				end;
+			true -> {error, unknown_departement}
+		end;
+		true -> {error, something_wrong}
+	end;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -187,19 +233,24 @@ parse({Preposition, Zone, Analyzed}) ->
 	Pos_mot = is_in_Tuple({"not_french", "unknown_region"}, Mot),
 	if (Pos_mot > 0) -> {error, list_to_atom(Mot)};
 		true ->
-			case Preposition of
-				"au nord de la"   when Mot =:= "la"  -> parse({"en", Zone, Analyzed});
-				"au sud de la"    when Mot =:= "la"  -> parse({"en", Zone, Analyzed});
-				"a l'est de la"   when Mot =:= "la"  -> parse({"en", Zone, Analyzed});
-				"a l'ouest de la" when Mot =:= "la"  -> parse({"en", Zone, Analyzed});
-				"au nord du"      when Mot =:= "du"  -> parse({"en", Zone, Analyzed});
-				"au sud du"       when Mot =:= "du"  -> parse({"en", Zone, Analyzed});
-				"a l'est du"      when Mot =:= "du"  -> parse({"en", Zone, Analyzed});
-				"a l'ouest du"    when Mot =:= "du"  -> parse({"en", Zone, Analyzed});
-				"au nord des"     when Mot =:= "des" -> parse({"en", Zone, Analyzed});
-				"au sud des"      when Mot =:= "des" -> parse({"en", Zone, Analyzed});
-				"a l'est des"     when Mot =:= "des" -> parse({"en", Zone, Analyzed});
-				"a l'ouest des"   when Mot =:= "des" -> parse({"en", Zone, Analyzed});
+			case Mot of 
+				"la" when Preposition =:= "au nord de la" orelse
+						  Preposition =:= "au sud de la" orelse
+						  Preposition =:= "a l'est de la" orelse
+						  Preposition =:= "a l'ouest de la"
+					-> parse({"en", Zone, Analyzed});
+
+				"du" when Preposition =:= "au nord du" orelse 
+						  Preposition =:= "au sud du" orelse
+						  Preposition =:= "a l'est du" orelse
+						  Preposition =:= "a l'ouest du"
+					-> parse({"en", Zone, Analyzed});
+
+				"des" when Preposition =:= "au nord des" orelse 
+						   Preposition =:= "au sud des" orelse
+						   Preposition =:= "a l'est des" orelse
+						   Preposition =:= "a l'ouest des"
+					-> parse({"en", Zone, Analyzed});
 				_ -> {error, not_french}
 		end
 	end;
